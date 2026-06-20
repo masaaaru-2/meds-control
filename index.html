@@ -50,6 +50,18 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     #btn-start { background: #4ecca3; color: #1a1a2e; }
     #btn-stop  { background: #e94560; color: #fff; }
+    #status-badge {
+      display: inline-block;
+      margin-bottom: 16px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      background: #333;
+      color: #aaa;
+    }
+    #status-badge.running { background: #1a4a3a; color: #4ecca3; }
+    #status-badge.stopped { background: #4a1a1a; color: #e94560; }
     #msg {
       margin-top: 20px;
       font-size: 0.9rem;
@@ -57,12 +69,14 @@
       color: #4ecca3;
     }
     #msg.error { color: #e94560; }
+    #msg.warn  { color: #f0a500; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>🎮 マイクラサーバー管理</h1>
     <p>大津マイクラサーバー</p>
+    <div id="status-badge">状態を確認中...</div>
     <input type="password" id="password" placeholder="パスワードを入力" />
     <div class="buttons">
       <button id="btn-start" onclick="control('start')">▶ 起動</button>
@@ -73,6 +87,47 @@
 
   <script>
     const FUNCTION_URL = "https://meds-control-720137046886.asia-northeast2.run.app";
+
+    function updateBadge(vmStatus) {
+      const badge = document.getElementById("status-badge");
+      if (vmStatus === "RUNNING") {
+        badge.textContent = "🟢 起動中";
+        badge.className = "running";
+      } else if (vmStatus === "TERMINATED") {
+        badge.textContent = "🔴 停止中";
+        badge.className = "stopped";
+      } else if (vmStatus === "STAGING") {
+        badge.textContent = "🟡 起動処理中...";
+        badge.className = "";
+      } else if (vmStatus === "STOPPING") {
+        badge.textContent = "🟡 停止処理中...";
+        badge.className = "";
+      } else {
+        badge.textContent = vmStatus || "不明";
+        badge.className = "";
+      }
+    }
+
+    async function fetchStatus() {
+      const password = document.getElementById("password").value;
+      if (!password) return;
+      try {
+        const res = await fetch(FUNCTION_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, action: "status" }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          updateBadge(data.vm_status);
+        }
+      } catch (e) {}
+    }
+
+    document.getElementById("password").addEventListener("change", fetchStatus);
+    document.getElementById("password").addEventListener("keydown", e => {
+      if (e.key === "Enter") fetchStatus();
+    });
 
     async function control(action) {
       const password = document.getElementById("password").value;
@@ -97,9 +152,19 @@
         });
 
         if (res.ok) {
-          msg.textContent = action === "start"
-            ? "✅ 起動しました（1〜2分で接続可能）"
-            : "✅ 停止しました";
+          const data = await res.json();
+          if (data.status === "already") {
+            msg.textContent = action === "start"
+              ? "⚠️ すでに起動しています"
+              : "⚠️ すでに停止しています";
+            msg.className = "warn";
+          } else {
+            msg.textContent = action === "start"
+              ? "✅ 起動しました（1〜2分で接続可能）"
+              : "✅ 停止しました";
+            msg.className = "";
+          }
+          updateBadge(data.vm_status);
         } else {
           msg.textContent = "❌ パスワードが違います";
           msg.className = "error";
